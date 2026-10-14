@@ -2453,24 +2453,30 @@ void ad9361_device_t::tx_fastlock_store(std::size_t slot)
         throw uhd::value_error("El slot TX debe estar entre 0 y 7.");
     }
 
-    const auto lock_status = _io_iface->peek8(REG_TX_CP_OVERRANGE_VCO_LOCK);
-    if ((lock_status & TX_VCO_LOCK_MASK) == 0) {
-        throw uhd::runtime_error("No se puede guardar el perfil: PLL TX no bloqueado.");
-    }
-
-    const auto data = _capture_tx_fastlock_profile();
-    auto& state     = _tx_fastlock_profiles[slot];
-
-    // A failed write may leave the slot partially updated.
+    auto& state = _tx_fastlock_profiles[slot];
     state.valid = false;
 
-    _write_tx_fastlock_profile(slot, data);
+    try {
+        const auto lock_status = _io_iface->peek8(REG_TX_CP_OVERRANGE_VCO_LOCK);
+        if ((lock_status & TX_VCO_LOCK_MASK) == 0) {
+            throw uhd::runtime_error(
+                "No se puede guardar el perfil: PLL TX no bloqueado.");
+        }
 
-    // Publish the state only after the complete write succeeds.
-    state.frequency_hz               = _tx_freq;
-    state.profile_word_15_original   = data[TX_FASTLOCK_ALC_PROFILE_WORD];
-    state.profile_word_15_programmed = data[TX_FASTLOCK_ALC_PROFILE_WORD];
-    state.valid                      = true;
+        const auto data = _capture_tx_fastlock_profile();
+        _write_tx_fastlock_profile(slot, data);
+
+        // Publish the state only after the complete write succeeds.
+        state.frequency_hz               = _tx_freq;
+        state.profile_word_15_original   = data[TX_FASTLOCK_ALC_PROFILE_WORD];
+        state.profile_word_15_programmed = data[TX_FASTLOCK_ALC_PROFILE_WORD];
+        state.valid                      = true;
+    } catch (...) {
+        for (auto& profile : _tx_fastlock_profiles) {
+            profile.valid = false;
+        }
+        throw;
+    }
 }
 
 /* Prepare TX Fast Lock mode and activate the initial profile. */
@@ -2482,11 +2488,14 @@ void ad9361_device_t::tx_fastlock_prepare(std::size_t initial_slot)
         throw uhd::value_error("El slot TX debe estar entre 0 y 7.");
     }
 
-    auto& initial = _tx_fastlock_profiles[initial_slot];
-
-    if (!initial.valid) {
-        throw uhd::runtime_error("El perfil TX inicial no fue cargado.");
+    for (const auto& profile : _tx_fastlock_profiles) {
+        if (!profile.valid) {
+            throw uhd::runtime_error(
+                "Fast Lock TX requiere los 8 perfiles cargados.");
+        }
     }
+
+    auto& initial = _tx_fastlock_profiles[initial_slot];
 
     // This read occurs during preparation, outside the hopping path.
     const auto current_alc =

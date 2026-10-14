@@ -1500,13 +1500,13 @@ public:
 
     /*! Prepare TX Fast Lock mode and activate the initial profile.
      *
-     * All profiles required by the hopping sequence must be stored before this
-     * call. The profiles must use a common TX configuration and B210 TX band.
+     * All eight profiles must be stored before this call. The profiles must use
+     * a common TX configuration and B210 TX band.
      *
      * \param initial_slot the initial TX profile slot, from 0 to 7
      * \throws uhd::not_implemented_error if the device does not support this operation
      * \throws uhd::value_error if the slot is out of range
-     * \throws uhd::runtime_error if the profile is invalid or preparation fails
+     * \throws uhd::runtime_error if any profile is invalid or preparation fails
      */
     virtual void tx_fastlock_prepare(size_t initial_slot) = 0;
 

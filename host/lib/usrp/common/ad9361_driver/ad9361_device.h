@@ -181,7 +181,8 @@ public:
      * or configuration change between tuning and storing the profile. */
     void tx_fastlock_store(std::size_t slot);
 
-    /* Prepare TX Fast Lock mode and activate the initial profile. */
+    /* Validate all eight profiles, prepare TX Fast Lock mode, and activate the
+     * initial profile. */
     void tx_fastlock_prepare(std::size_t initial_slot);
 
     /* Activate a prepared TX Fast Lock profile. */

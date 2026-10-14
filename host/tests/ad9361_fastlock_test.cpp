@@ -233,6 +233,14 @@ void check_profile_word_write(const std::vector<register_write>& writes,
         writes.at(offset + 3), REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
 }
 
+void load_complete_profile_scheme(ad9361_device_t& device)
+{
+    for (std::size_t slot = 0; slot < 8; ++slot) {
+        ad9361_fastlock_test_access::set_profile(
+            device, slot, 2.4e9 + static_cast<double>(slot) * 10e6, 0x20, 0x20);
+    }
+}
+
 } // namespace
 
 BOOST_FIXTURE_TEST_CASE(store_captures_and_programs_complete_profile, fastlock_fixture)
@@ -297,19 +305,27 @@ BOOST_FIXTURE_TEST_CASE(store_captures_and_programs_complete_profile, fastlock_f
         static_cast<unsigned>(expected_profile[TX_FASTLOCK_ALC_PROFILE_WORD]));
 }
 
-BOOST_FIXTURE_TEST_CASE(store_failure_does_not_publish_profile, fastlock_fixture)
+BOOST_FIXTURE_TEST_CASE(store_failure_invalidates_complete_scheme, fastlock_fixture)
 {
     constexpr std::size_t slot                  = 2;
+    load_complete_profile_scheme(device);
     io->registers[REG_TX_CP_OVERRANGE_VCO_LOCK] = 0x02;
     io->fail_on_next_poke(9);
 
     BOOST_CHECK_THROW(device.tx_fastlock_store(slot), uhd::runtime_error);
-    BOOST_CHECK(!ad9361_fastlock_test_access::profile_valid(device, slot));
+    for (std::size_t profile = 0; profile < 8; ++profile) {
+        BOOST_CHECK(!ad9361_fastlock_test_access::profile_valid(device, profile));
+    }
 }
 
 BOOST_FIXTURE_TEST_CASE(prepare_rejects_invalid_profile_before_io, fastlock_fixture)
 {
     BOOST_CHECK_THROW(device.tx_fastlock_prepare(8), uhd::value_error);
+
+    for (std::size_t slot = 0; slot < 7; ++slot) {
+        ad9361_fastlock_test_access::set_profile(
+            device, slot, 2.4e9 + static_cast<double>(slot) * 10e6, 0x20, 0x20);
+    }
     BOOST_CHECK_THROW(device.tx_fastlock_prepare(0), uhd::runtime_error);
     BOOST_CHECK(io->writes.empty());
 }
@@ -319,6 +335,7 @@ BOOST_FIXTURE_TEST_CASE(
 {
     constexpr std::size_t slot = 2;
     constexpr double frequency = 2.46e9;
+    load_complete_profile_scheme(device);
     ad9361_fastlock_test_access::set_profile(device, slot, frequency, 0x20, 0x20);
     io->registers[REG_TX_FORCE_ALC]  = 0x11;
     io->registers[REG_ENSM_CONFIG_2] = 0xA0;
@@ -351,6 +368,7 @@ BOOST_FIXTURE_TEST_CASE(
     prepare_corrects_alc_conflict_before_configuration, fastlock_fixture)
 {
     constexpr std::size_t slot = 1;
+    load_complete_profile_scheme(device);
     ad9361_fastlock_test_access::set_profile(device, slot, 2.41e9, 0x2A, 0x2A);
     io->registers[REG_TX_FORCE_ALC] = 0x15;
 
@@ -368,6 +386,7 @@ BOOST_FIXTURE_TEST_CASE(
 BOOST_FIXTURE_TEST_CASE(prepare_failure_restores_registers_and_state, fastlock_fixture)
 {
     constexpr std::size_t slot = 1;
+    load_complete_profile_scheme(device);
     ad9361_fastlock_test_access::set_profile(device, slot, 2.41e9, 0x2A, 0x2A);
     io->registers[REG_TX_FORCE_ALC]  = 0x01;
     io->registers[REG_ENSM_CONFIG_2] = 0xA0;
@@ -485,6 +504,7 @@ BOOST_FIXTURE_TEST_CASE(exit_restores_configuration_and_preserves_profiles, fast
 {
     constexpr std::size_t slot = 2;
     constexpr double frequency = 2.43e9;
+    load_complete_profile_scheme(device);
     ad9361_fastlock_test_access::set_profile(device, slot, frequency, 0x2A, 0x2A);
     io->registers[REG_TX_FORCE_ALC]  = 0x01;
     io->registers[REG_ENSM_CONFIG_2] = 0xA0;
@@ -512,6 +532,7 @@ BOOST_FIXTURE_TEST_CASE(exit_restores_configuration_and_preserves_profiles, fast
 BOOST_FIXTURE_TEST_CASE(exit_allows_preparing_stored_profiles_again, fastlock_fixture)
 {
     constexpr std::size_t slot = 1;
+    load_complete_profile_scheme(device);
     ad9361_fastlock_test_access::set_profile(device, slot, 2.42e9, 0x2A, 0x2A);
     io->registers[REG_TX_FORCE_ALC] = 0x01;
 
@@ -524,6 +545,25 @@ BOOST_FIXTURE_TEST_CASE(exit_allows_preparing_stored_profiles_again, fastlock_fi
     BOOST_CHECK(ad9361_fastlock_test_access::prepared(device));
     BOOST_CHECK_EQUAL(ad9361_fastlock_test_access::active_profile(device), slot);
     BOOST_CHECK(!io->writes.empty());
+}
+
+BOOST_FIXTURE_TEST_CASE(exit_failure_preserves_prepared_state, fastlock_fixture)
+{
+    constexpr std::size_t slot = 1;
+    load_complete_profile_scheme(device);
+    io->registers[REG_TX_FORCE_ALC] = 0x01;
+
+    device.tx_fastlock_prepare(slot);
+    io->clear_writes();
+    io->fail_on_next_poke(1);
+
+    BOOST_CHECK_THROW(device.tx_fastlock_exit(), uhd::runtime_error);
+
+    BOOST_CHECK(ad9361_fastlock_test_access::prepared(device));
+    BOOST_CHECK_EQUAL(ad9361_fastlock_test_access::active_profile(device), slot);
+    for (std::size_t profile = 0; profile < 8; ++profile) {
+        BOOST_CHECK(ad9361_fastlock_test_access::profile_valid(device, profile));
+    }
 }
 
 }} // namespace uhd::usrp
