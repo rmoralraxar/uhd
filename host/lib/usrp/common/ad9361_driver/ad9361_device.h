@@ -12,7 +12,9 @@
 #include <uhd/types/sensors.hpp>
 #include <uhd/utils/noncopyable.hpp>
 #include <ad9361_client.h>
+#include <array>
 #include <complex>
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -21,8 +23,12 @@
 
 namespace uhd { namespace usrp {
 
+class ad9361_fastlock_test_access;
+
 class ad9361_device_t : public uhd::noncopyable
 {
+    friend class ad9361_fastlock_test_access;
+
 public:
     enum direction_t { RX, TX };
     enum gain_mode_t { GAIN_MODE_MANUAL, GAIN_MODE_SLOW_AGC, GAIN_MODE_FAST_AGC };
@@ -170,6 +176,17 @@ public:
      * After tuning, it runs any appropriate calibrations. */
     double tune(direction_t direction, const double value);
 
+    /* Store the current TX synthesizer settings in a Fast Lock slot.
+     * Requires a successful TX tune, Fast Lock inactive, and no intervening tune
+     * or configuration change between tuning and storing the profile. */
+    void tx_fastlock_store(std::size_t slot);
+
+    /* Prepare TX Fast Lock mode and activate the initial profile. */
+    void tx_fastlock_prepare(std::size_t initial_slot);
+
+    /* Activate a prepared TX Fast Lock profile. */
+    void tx_fastlock_recall(std::size_t slot);
+
     /* Get the current RX or TX frequency. */
     double get_freq(direction_t direction);
 
@@ -265,6 +282,11 @@ private: // Methods
     double _tune_bbvco(const double rate);
     void _reprogram_gains();
     double _tune_helper(direction_t direction, const double value);
+    std::array<uint8_t, 16> _capture_tx_fastlock_profile();
+    void _write_tx_fastlock_profile_word(
+        std::size_t slot, std::size_t word, uint8_t value);
+    void _write_tx_fastlock_profile(
+        std::size_t slot, const std::array<uint8_t, 16>& profile);
     double _setup_rates(const double rate);
     double _get_temperature(const double cal_offset, const double timeout = 0.1);
     void _configure_bb_dc_tracking();
@@ -288,6 +310,22 @@ private: // Methods
     void _set_filter_lp_tia_sec(direction_t direction, filter_info_base::sptr filter);
 
 private: // Members
+    static constexpr std::size_t TX_FASTLOCK_NO_ACTIVE_PROFILE = 8;
+
+    struct tx_fastlock_profile_state
+    {
+        bool valid                         = false;
+        double frequency_hz                = 0.0;
+        uint8_t profile_word_15_original   = 0;
+        uint8_t profile_word_15_programmed = 0;
+    };
+
+    std::array<tx_fastlock_profile_state, 8> _tx_fastlock_profiles{};
+    bool _tx_fastlock_prepared                  = false;
+    std::size_t _tx_fastlock_active_profile     = TX_FASTLOCK_NO_ACTIVE_PROFILE;
+    uint8_t _tx_fastlock_previous_ensm_config_2 = 0;
+    uint8_t _tx_fastlock_previous_tx_pfd_config = 0;
+
     struct chip_regs_t
     {
         chip_regs_t()

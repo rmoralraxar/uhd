@@ -61,6 +61,24 @@ public:
         return rpc().catalina_tune(which, value);
     }
 
+    void tx_fastlock_store(std::size_t /*slot*/) override
+    {
+        throw uhd::runtime_error(
+            "ad9361_ctrl::tx_fastlock_store is not supported over an RPC connection");
+    }
+
+    void tx_fastlock_prepare(std::size_t /*initial_slot*/) override
+    {
+        throw uhd::runtime_error(
+            "ad9361_ctrl::tx_fastlock_prepare is not supported over an RPC connection");
+    }
+
+    void tx_fastlock_recall(std::size_t /*slot*/) override
+    {
+        throw uhd::runtime_error(
+            "ad9361_ctrl::tx_fastlock_recall is not supported over an RPC connection");
+    }
+
     void set_dc_offset_auto(const std::string& which, const bool on) override
     {
         rpc().set_dc_offset_auto(which, on);

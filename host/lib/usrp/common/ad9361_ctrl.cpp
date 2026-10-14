@@ -178,6 +178,24 @@ public:
         return return_val;
     }
 
+    void tx_fastlock_store(std::size_t slot) override
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _device.tx_fastlock_store(slot);
+    }
+
+    void tx_fastlock_prepare(std::size_t initial_slot) override
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _device.tx_fastlock_prepare(initial_slot);
+    }
+
+    void tx_fastlock_recall(std::size_t slot) override
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _device.tx_fastlock_recall(slot);
+    }
+
     //! get the current frequency for the given frontend
     double get_freq(const std::string& which) override
     {

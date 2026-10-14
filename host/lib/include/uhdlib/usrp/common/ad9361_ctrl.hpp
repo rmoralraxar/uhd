@@ -15,6 +15,7 @@
 #include <uhd/utils/noncopyable.hpp>
 #include <ad9361_device.h>
 #include <complex>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -110,6 +111,15 @@ public:
 
     //! tune the given frontend, return the exact value
     virtual double tune(const std::string& which, const double value) = 0;
+
+    //! Store the current TX synthesizer settings in a Fast Lock slot.
+    virtual void tx_fastlock_store(std::size_t slot) = 0;
+
+    //! Prepare TX Fast Lock mode and activate the initial profile.
+    virtual void tx_fastlock_prepare(std::size_t initial_slot) = 0;
+
+    //! Activate a prepared TX Fast Lock profile.
+    virtual void tx_fastlock_recall(std::size_t slot) = 0;
 
     //! set the DC offset for I and Q manually
     void set_dc_offset(const std::string&, const std::complex<double>)

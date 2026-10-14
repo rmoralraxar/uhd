@@ -25,6 +25,7 @@
 #include <boost/functional/hash.hpp>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <ctime>
 #include <functional>
@@ -636,6 +637,24 @@ b200_impl::b200_impl(
         client_settings = std::make_shared<b200_ad9361_client_t>();
     }
     _codec_ctrl = ad9361_ctrl::make_spi(client_settings, _spi_iface, AD9361_SLAVENO);
+
+    if (_product == B210) {
+        const fs_path fastlock_path = mb_path / "fastlock" / "tx";
+
+        _tree->create<std::size_t>(fastlock_path / "store")
+            .add_coerced_subscriber(
+                [this](const std::size_t slot) { _codec_ctrl->tx_fastlock_store(slot); });
+
+        _tree->create<std::size_t>(fastlock_path / "prepare")
+            .add_coerced_subscriber([this](const std::size_t initial_slot) {
+                _codec_ctrl->tx_fastlock_prepare(initial_slot);
+            });
+
+        _tree->create<std::size_t>(fastlock_path / "recall")
+            .add_coerced_subscriber([this](const std::size_t slot) {
+                _codec_ctrl->tx_fastlock_recall(slot);
+            });
+    }
 
     ////////////////////////////////////////////////////////////////////
     // create codec control objects

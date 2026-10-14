@@ -44,6 +44,103 @@
 
 namespace uhd { namespace usrp {
 
+namespace {
+
+// Register addresses used to capture a TX Fast Lock profile.
+constexpr uint32_t REG_RFPLL_DIVIDERS         = 0x005;
+constexpr uint32_t REG_TX_INTEGER_BYTE_0      = 0x271;
+constexpr uint32_t REG_TX_INTEGER_BYTE_1      = 0x272;
+constexpr uint32_t REG_TX_FRACT_BYTE_0        = 0x273;
+constexpr uint32_t REG_TX_FRACT_BYTE_1        = 0x274;
+constexpr uint32_t REG_TX_FRACT_BYTE_2        = 0x275;
+constexpr uint32_t REG_TX_FORCE_ALC           = 0x276;
+constexpr uint32_t REG_TX_FORCE_VCO_TUNE_0    = 0x277;
+constexpr uint32_t REG_TX_FORCE_VCO_TUNE_1    = 0x278;
+constexpr uint32_t REG_TX_ALC_VARACTOR        = 0x279;
+constexpr uint32_t REG_TX_CP_CURRENT          = 0x27B;
+constexpr uint32_t REG_TX_LOOP_FILTER_1       = 0x27E;
+constexpr uint32_t REG_TX_LOOP_FILTER_2       = 0x27F;
+constexpr uint32_t REG_TX_LOOP_FILTER_3       = 0x280;
+constexpr uint32_t REG_TX_VCO_BIAS_1          = 0x282;
+constexpr uint32_t REG_TX_VCO_VARACTOR_CTRL_0 = 0x290;
+constexpr uint32_t REG_TX_VCO_VARACTOR_CTRL_1 = 0x291;
+
+// Register field masks.
+constexpr uint8_t VCO_BIAS_REF_MASK         = 0x07;
+constexpr uint8_t VCO_BIAS_TCF_MASK         = 0x18;
+constexpr uint8_t VCO_VARACTOR_MASK         = 0x0F;
+constexpr uint8_t CHARGE_PUMP_CURRENT_MASK  = 0x3F;
+constexpr uint8_t LOOP_FILTER_C1_MASK       = 0x0F;
+constexpr uint8_t LOOP_FILTER_C2_MASK       = 0xF0;
+constexpr uint8_t LOOP_FILTER_C3_MASK       = 0x0F;
+constexpr uint8_t LOOP_FILTER_R1_MASK       = 0xF0;
+constexpr uint8_t LOOP_FILTER_R3_MASK       = 0x0F;
+constexpr uint8_t VCO_VARACTOR_REF_TCF_MASK = 0x70;
+constexpr uint8_t VCO_VARACTOR_REF_MASK     = 0x0F;
+constexpr uint8_t TX_VCO_DIVIDER_MASK       = 0xF0;
+constexpr uint8_t VCO_CAL_OFFSET_MASK       = 0x78;
+constexpr uint8_t FORCE_ALC_WORD_MASK       = 0x7F;
+constexpr uint8_t FORCE_VCO_TUNE_MASK       = 0x01;
+
+// Field positions within the registers.
+constexpr unsigned VCO_BIAS_TCF_SHIFT         = 3;
+constexpr unsigned LOOP_FILTER_C2_SHIFT       = 4;
+constexpr unsigned LOOP_FILTER_R1_SHIFT       = 4;
+constexpr unsigned VCO_VARACTOR_REF_TCF_SHIFT = 4;
+constexpr unsigned TX_VCO_DIVIDER_SHIFT       = 4;
+constexpr unsigned VCO_CAL_OFFSET_SHIFT       = 3;
+
+// Destination positions within the profile bytes.
+constexpr unsigned FASTLOCK_HIGH_NIBBLE_SHIFT = 4;
+constexpr unsigned FASTLOCK_BIAS_TCF_SHIFT    = 6;
+constexpr unsigned FASTLOCK_ALC_WORD_SHIFT    = 1;
+constexpr std::size_t TX_FASTLOCK_ALC_PROFILE_WORD = 15;
+
+// Registers used to program the TX Fast Lock profile memory.
+constexpr uint32_t REG_TX_FAST_LOCK_PROGRAM_ADDR = 0x29C;
+constexpr uint32_t REG_TX_FAST_LOCK_PROGRAM_DATA = 0x29D;
+constexpr uint32_t REG_TX_FAST_LOCK_PROGRAM_CTRL = 0x29F;
+
+// Registers used to prepare TX Fast Lock mode.
+constexpr uint32_t REG_ENSM_CONFIG_2                 = 0x015;
+constexpr uint32_t REG_TX_PFD_CONFIG                 = 0x270;
+constexpr uint32_t REG_TX_FAST_LOCK_SETUP            = 0x29A;
+constexpr uint32_t REG_TX_FAST_LOCK_SETUP_INIT_DELAY = 0x29B;
+
+// PROGRAM_ADDR fields.
+constexpr uint8_t FASTLOCK_SLOT_MASK   = 0x70;
+constexpr unsigned FASTLOCK_SLOT_SHIFT = 4;
+constexpr uint8_t FASTLOCK_WORD_MASK   = 0x0F;
+constexpr unsigned FASTLOCK_WORD_SHIFT = 0;
+
+// PROGRAM_CTRL bits and values.
+constexpr uint8_t FASTLOCK_PROGRAM_WRITE        = 0x02;
+constexpr uint8_t FASTLOCK_PROGRAM_CLOCK_ENABLE = 0x01;
+constexpr uint8_t FASTLOCK_PROGRAM_START        = FASTLOCK_PROGRAM_WRITE
+                                                  | FASTLOCK_PROGRAM_CLOCK_ENABLE;
+constexpr uint8_t FASTLOCK_PROGRAM_DISABLE      = 0x00;
+
+// TX Fast Lock preparation fields and values.
+constexpr uint8_t TX_SYNTH_READY_MASK         = 0x01;
+constexpr uint8_t BYPASS_TX_SYNTH_CALIBRATION = 0x01;
+constexpr uint8_t TX_FASTLOCK_MODE_ENABLE     = 0x01;
+constexpr uint8_t TX_FASTLOCK_PROFILE_MASK    = 0xE0;
+constexpr unsigned TX_FASTLOCK_PROFILE_SHIFT  = 5;
+constexpr uint8_t TX_FASTLOCK_INIT_DELAY      = 0x00;
+
+uint8_t make_tx_fastlock_setup(std::size_t slot)
+{
+    return static_cast<uint8_t>(
+        ((slot << TX_FASTLOCK_PROFILE_SHIFT) & TX_FASTLOCK_PROFILE_MASK)
+        | TX_FASTLOCK_MODE_ENABLE);
+}
+
+// TX synthesizer lock status.
+constexpr uint32_t REG_TX_CP_OVERRANGE_VCO_LOCK = 0x287;
+constexpr uint8_t TX_VCO_LOCK_MASK              = 0x02;
+
+} // namespace
+
 /* This is a simple comparison for very large double-precision floating
  * point numbers. It is used to prevent re-tunes for frequencies that are
  * the same but not 'exactly' because of data precision issues. */
@@ -1407,6 +1504,164 @@ double ad9361_device_t::_tune_helper(direction_t direction, const double value)
     }
 }
 
+/*
+ * TX profile capture and programming adapted from ad9361_fastlock_store() and
+ * ad9361_fastlock_writeval() in Analog Devices no-OS:
+ * https://github.com/analogdevicesinc/no-OS/blob/main/drivers/rf-transceiver/ad9361/ad9361.c
+ * Copyright 2014-2015(c) Analog Devices, Inc.
+ * Original code licensed under BSD-3-Clause:
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 3. Neither the name of the copyright holder nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+std::array<uint8_t, 16> ad9361_device_t::_capture_tx_fastlock_profile()
+{
+    // The caller holds _mutex and verifies TX PLL lock after a successful tune.
+    std::array<uint8_t, 16> profile{};
+
+    // Integer and fractional synthesizer words.
+    profile[0] = _io_iface->peek8(REG_TX_INTEGER_BYTE_0);
+    profile[1] = _io_iface->peek8(REG_TX_INTEGER_BYTE_1);
+    profile[2] = _io_iface->peek8(REG_TX_FRACT_BYTE_0);
+    profile[3] = _io_iface->peek8(REG_TX_FRACT_BYTE_1);
+    profile[4] = _io_iface->peek8(REG_TX_FRACT_BYTE_2);
+
+    // Read each required register once.
+    const auto bias       = _io_iface->peek8(REG_TX_VCO_BIAS_1);
+    const auto varactor   = _io_iface->peek8(REG_TX_ALC_VARACTOR);
+    const auto cp_current = _io_iface->peek8(REG_TX_CP_CURRENT);
+    const auto filter1    = _io_iface->peek8(REG_TX_LOOP_FILTER_1);
+    const auto filter2    = _io_iface->peek8(REG_TX_LOOP_FILTER_2);
+    const auto filter3    = _io_iface->peek8(REG_TX_LOOP_FILTER_3);
+    const auto var_ctrl0  = _io_iface->peek8(REG_TX_VCO_VARACTOR_CTRL_0);
+    const auto var_ctrl1  = _io_iface->peek8(REG_TX_VCO_VARACTOR_CTRL_1);
+    const auto dividers   = _io_iface->peek8(REG_RFPLL_DIVIDERS);
+    const auto vco_tune1  = _io_iface->peek8(REG_TX_FORCE_VCO_TUNE_1);
+    const auto alc        = _io_iface->peek8(REG_TX_FORCE_ALC);
+
+    // Extract each field, aligned to bit zero.
+    const auto bias_ref     = bias & VCO_BIAS_REF_MASK;
+    const auto bias_tcf     = (bias & VCO_BIAS_TCF_MASK) >> VCO_BIAS_TCF_SHIFT;
+    const auto vco_varactor = varactor & VCO_VARACTOR_MASK;
+    const auto charge_pump  = cp_current & CHARGE_PUMP_CURRENT_MASK;
+
+    const auto c1 = filter1 & LOOP_FILTER_C1_MASK;
+    const auto c2 = (filter1 & LOOP_FILTER_C2_MASK) >> LOOP_FILTER_C2_SHIFT;
+    const auto c3 = filter2 & LOOP_FILTER_C3_MASK;
+    const auto r1 = (filter2 & LOOP_FILTER_R1_MASK) >> LOOP_FILTER_R1_SHIFT;
+    const auto r3 = filter3 & LOOP_FILTER_R3_MASK;
+
+    const auto varactor_ref_tcf = (var_ctrl0 & VCO_VARACTOR_REF_TCF_MASK)
+                                  >> VCO_VARACTOR_REF_TCF_SHIFT;
+    const auto varactor_ref     = var_ctrl1 & VCO_VARACTOR_REF_MASK;
+    const auto tx_divider   = (dividers & TX_VCO_DIVIDER_MASK) >> TX_VCO_DIVIDER_SHIFT;
+    const auto cal_offset   = (vco_tune1 & VCO_CAL_OFFSET_MASK) >> VCO_CAL_OFFSET_SHIFT;
+    const auto alc_word     = alc & FORCE_ALC_WORD_MASK;
+    const auto vco_tune_bit = vco_tune1 & FORCE_VCO_TUNE_MASK;
+
+    // Pack the fields in Fast Lock profile format.
+    profile[5] =
+        static_cast<uint8_t>((bias_ref << FASTLOCK_HIGH_NIBBLE_SHIFT) | vco_varactor);
+    profile[6] =
+        static_cast<uint8_t>((bias_tcf << FASTLOCK_BIAS_TCF_SHIFT) | charge_pump);
+    profile[7] = static_cast<uint8_t>(charge_pump);
+
+    // Use identical initial and steady-state PLL loop filter settings.
+    profile[8]  = static_cast<uint8_t>((r3 << FASTLOCK_HIGH_NIBBLE_SHIFT) | r3);
+    profile[9]  = static_cast<uint8_t>((c3 << FASTLOCK_HIGH_NIBBLE_SHIFT) | c3);
+    profile[10] = static_cast<uint8_t>((c1 << FASTLOCK_HIGH_NIBBLE_SHIFT) | c2);
+    profile[11] = static_cast<uint8_t>((r1 << FASTLOCK_HIGH_NIBBLE_SHIFT) | r1);
+
+    profile[12] = static_cast<uint8_t>(
+        (varactor_ref_tcf << FASTLOCK_HIGH_NIBBLE_SHIFT) | tx_divider);
+    profile[13] =
+        static_cast<uint8_t>((cal_offset << FASTLOCK_HIGH_NIBBLE_SHIFT) | varactor_ref);
+
+    profile[14] = _io_iface->peek8(REG_TX_FORCE_VCO_TUNE_0);
+    profile[15] =
+        static_cast<uint8_t>((alc_word << FASTLOCK_ALC_WORD_SHIFT) | vco_tune_bit);
+
+    return profile;
+}
+
+void ad9361_device_t::_write_tx_fastlock_profile_word(
+    std::size_t slot, std::size_t word, uint8_t value)
+{
+    // The caller holds _mutex and guarantees a valid slot and word.
+
+    const auto slot_address =
+        static_cast<uint8_t>((slot << FASTLOCK_SLOT_SHIFT) & FASTLOCK_SLOT_MASK);
+    const auto word_address =
+        static_cast<uint8_t>((word << FASTLOCK_WORD_SHIFT) & FASTLOCK_WORD_MASK);
+    const auto address = static_cast<uint8_t>(slot_address | word_address);
+
+    try {
+        // Select the slot and byte within the profile.
+        _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_ADDR, address);
+
+        // Supply the byte to write.
+        _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_DATA, value);
+
+        // Enable writes and the Fast Lock memory clock.
+        _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_START);
+
+        // Disable both bits after writing the byte.
+        _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
+    } catch (...) {
+        // Attempt to disable writes and the memory clock after an error.
+        try {
+            _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
+        } catch (...) {
+            // Preserve the original exception if this attempt also fails.
+        }
+        throw;
+    }
+}
+
+void ad9361_device_t::_write_tx_fastlock_profile(
+    std::size_t slot, const std::array<uint8_t, 16>& profile)
+{
+    // The caller holds _mutex and guarantees a valid slot (0 to 7).
+    // Profiles are prepared with Fast Lock inactive.
+
+    // Disable writes and the Fast Lock memory clock before starting.
+    try {
+        _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
+    } catch (...) {
+        try {
+            _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
+        } catch (...) {
+            // Preserve the original exception if this attempt also fails.
+        }
+        throw;
+    }
+
+    for (std::size_t word = 0; word < profile.size(); ++word) {
+        _write_tx_fastlock_profile_word(slot, word, profile[word]);
+    }
+}
+
 /* Configure the various clock / sample rates in the RX and TX chains.
  *
  * Functionally, this function configures AD9361's RX and TX rates. For
@@ -2186,6 +2441,141 @@ double ad9361_device_t::tune(direction_t direction, const double value)
     }
 
     return get_freq(direction);
+}
+
+/* Store the current TX synthesizer settings in a Fast Lock slot. */
+void ad9361_device_t::tx_fastlock_store(std::size_t slot)
+{
+    // Protect profile capture and programming from concurrent driver operations.
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
+
+    if (slot >= _tx_fastlock_profiles.size()) {
+        throw uhd::value_error("El slot TX debe estar entre 0 y 7.");
+    }
+
+    const auto lock_status = _io_iface->peek8(REG_TX_CP_OVERRANGE_VCO_LOCK);
+    if ((lock_status & TX_VCO_LOCK_MASK) == 0) {
+        throw uhd::runtime_error("No se puede guardar el perfil: PLL TX no bloqueado.");
+    }
+
+    const auto data = _capture_tx_fastlock_profile();
+    auto& state     = _tx_fastlock_profiles[slot];
+
+    // A failed write may leave the slot partially updated.
+    state.valid = false;
+
+    _write_tx_fastlock_profile(slot, data);
+
+    // Publish the state only after the complete write succeeds.
+    state.frequency_hz               = _tx_freq;
+    state.profile_word_15_original   = data[TX_FASTLOCK_ALC_PROFILE_WORD];
+    state.profile_word_15_programmed = data[TX_FASTLOCK_ALC_PROFILE_WORD];
+    state.valid                      = true;
+}
+
+/* Prepare TX Fast Lock mode and activate the initial profile. */
+void ad9361_device_t::tx_fastlock_prepare(std::size_t initial_slot)
+{
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
+
+    if (initial_slot >= _tx_fastlock_profiles.size()) {
+        throw uhd::value_error("El slot TX debe estar entre 0 y 7.");
+    }
+
+    auto& initial = _tx_fastlock_profiles[initial_slot];
+
+    if (!initial.valid) {
+        throw uhd::runtime_error("El perfil TX inicial no fue cargado.");
+    }
+
+    // This read occurs during preparation, outside the hopping path.
+    const auto current_alc =
+        _io_iface->peek8(REG_TX_FORCE_ALC) & FORCE_ALC_WORD_MASK;
+    const auto target_alc =
+        initial.profile_word_15_programmed >> FASTLOCK_ALC_WORD_SHIFT;
+
+    if (current_alc == target_alc) {
+        const auto original_alc =
+            initial.profile_word_15_original >> FASTLOCK_ALC_WORD_SHIFT;
+        const auto corrected = original_alc == target_alc
+                                   ? static_cast<uint8_t>(
+                                         initial.profile_word_15_programmed + 2)
+                                   : initial.profile_word_15_original;
+
+        _write_tx_fastlock_profile_word(
+            initial_slot, TX_FASTLOCK_ALC_PROFILE_WORD, corrected);
+        initial.profile_word_15_programmed = corrected;
+    }
+
+    const auto previous_ensm = _io_iface->peek8(REG_ENSM_CONFIG_2);
+    const auto previous_pfd  = _io_iface->peek8(REG_TX_PFD_CONFIG);
+    const auto setup         = make_tx_fastlock_setup(initial_slot);
+
+    try {
+        _io_iface->poke8(REG_TX_FAST_LOCK_SETUP_INIT_DELAY, TX_FASTLOCK_INIT_DELAY);
+        _io_iface->poke8(REG_TX_FAST_LOCK_SETUP, setup);
+        _io_iface->poke8(
+            REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
+        _io_iface->poke8(
+            REG_ENSM_CONFIG_2, previous_ensm | TX_SYNTH_READY_MASK);
+        _io_iface->poke8(
+            REG_TX_PFD_CONFIG, previous_pfd | BYPASS_TX_SYNTH_CALIBRATION);
+
+        // Activate the initial profile after preparing Fast Lock mode.
+        _io_iface->poke8(REG_TX_FAST_LOCK_SETUP, setup);
+    } catch (...) {
+        // Attempt to restore the previous state while preserving the original error.
+        try {
+            _io_iface->poke8(REG_TX_FAST_LOCK_SETUP, 0);
+            _io_iface->poke8(REG_TX_PFD_CONFIG, previous_pfd);
+            _io_iface->poke8(REG_ENSM_CONFIG_2, previous_ensm);
+            _io_iface->poke8(
+                REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
+        } catch (...) {
+        }
+        throw;
+    }
+
+    _tx_fastlock_previous_ensm_config_2 = previous_ensm;
+    _tx_fastlock_previous_tx_pfd_config = previous_pfd;
+    _tx_fastlock_active_profile         = initial_slot;
+    _tx_fastlock_prepared               = true;
+
+    _tx_freq     = initial.frequency_hz;
+    _req_tx_freq = initial.frequency_hz;
+}
+
+/* Activate a prepared TX Fast Lock profile. */
+void ad9361_device_t::tx_fastlock_recall(std::size_t slot)
+{
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
+
+    const auto& current = _tx_fastlock_profiles[_tx_fastlock_active_profile];
+    auto& target        = _tx_fastlock_profiles[slot];
+
+    const auto current_alc =
+        current.profile_word_15_programmed >> FASTLOCK_ALC_WORD_SHIFT;
+    const auto target_alc =
+        target.profile_word_15_programmed >> FASTLOCK_ALC_WORD_SHIFT;
+
+    if (current_alc == target_alc) {
+        const auto original_alc =
+            target.profile_word_15_original >> FASTLOCK_ALC_WORD_SHIFT;
+        const auto corrected = original_alc == target_alc
+                                   ? static_cast<uint8_t>(
+                                         target.profile_word_15_programmed + 2)
+                                   : target.profile_word_15_original;
+
+        _write_tx_fastlock_profile_word(
+            slot, TX_FASTLOCK_ALC_PROFILE_WORD, corrected);
+        target.profile_word_15_programmed = corrected;
+    }
+
+    _io_iface->poke8(REG_TX_FAST_LOCK_SETUP, make_tx_fastlock_setup(slot));
+
+    _tx_fastlock_active_profile = slot;
+    _tx_freq                     = target.frequency_hz;
+    _req_tx_freq                 = target.frequency_hz;
 }
 
 /* Get the current RX or TX frequency. */

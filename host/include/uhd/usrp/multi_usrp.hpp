@@ -1482,6 +1482,45 @@ public:
     virtual tune_result_t set_tx_freq(
         const tune_request_t& tune_request, size_t chan = 0) = 0;
 
+    /*! Store the current TX synthesizer settings in a Fast Lock slot.
+     *
+     * This fork-specific operation supports the B210 on motherboard 0. Its TX
+     * synthesizer and profile slots are shared by both TX channels. It stores
+     * a profile without selecting it for recall.
+     *
+     * Call after a successful TX tune, with Fast Lock inactive. The caller must
+     * prevent intervening tunes or configuration changes before storing.
+     *
+     * \param slot the TX profile slot, from 0 to 7
+     * \throws uhd::not_implemented_error if the device does not support this operation
+     * \throws uhd::value_error if the slot is out of range
+     * \throws uhd::runtime_error if the TX PLL is unlocked or storage fails
+     */
+    virtual void tx_fastlock_store(size_t slot) = 0;
+
+    /*! Prepare TX Fast Lock mode and activate the initial profile.
+     *
+     * All profiles required by the hopping sequence must be stored before this
+     * call. The profiles must use a common TX configuration and B210 TX band.
+     *
+     * \param initial_slot the initial TX profile slot, from 0 to 7
+     * \throws uhd::not_implemented_error if the device does not support this operation
+     * \throws uhd::value_error if the slot is out of range
+     * \throws uhd::runtime_error if the profile is invalid or preparation fails
+     */
+    virtual void tx_fastlock_prepare(size_t initial_slot) = 0;
+
+    /*! Activate a prepared TX Fast Lock profile.
+     *
+     * The caller must have stored the profile and prepared Fast Lock before
+     * calling this operation.
+     *
+     * \param slot the TX profile slot, from 0 to 7
+     * \throws uhd::not_implemented_error if the device does not support this operation
+     * \throws uhd::runtime_error if communication with the device fails
+     */
+    virtual void tx_fastlock_recall(size_t slot) = 0;
+
     /*!
      * Get the TX center frequency.
      * \param chan the channel index 0 to N-1

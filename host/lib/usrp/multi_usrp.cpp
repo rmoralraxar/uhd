@@ -278,6 +278,15 @@ public:
     multi_usrp_impl(device::sptr dev) : _dev(dev)
     {
         _tree = _dev->get_tree();
+
+        const fs_path fastlock_path = mb_root(0) / "fastlock" / "tx";
+        if (_tree->exists(fastlock_path / "prepare")
+            && _tree->exists(fastlock_path / "recall")) {
+            _tx_fastlock_prepare_property =
+                &_tree->access<size_t>(fastlock_path / "prepare");
+            _tx_fastlock_recall_property =
+                &_tree->access<size_t>(fastlock_path / "recall");
+        }
     }
 
     device::sptr get_device(void) override
@@ -1989,6 +1998,37 @@ public:
         return result;
     }
 
+    void tx_fastlock_store(size_t slot) override
+    {
+        const fs_path store_path = mb_root(0) / "fastlock" / "tx" / "store";
+        if (!_tree->exists(store_path)) {
+            throw uhd::not_implemented_error(
+                "TX Fast Lock profile storage is not supported on this device.");
+        }
+
+        _tree->access<size_t>(store_path).set(slot);
+    }
+
+    void tx_fastlock_prepare(size_t initial_slot) override
+    {
+        if (!_tx_fastlock_prepare_property) {
+            throw uhd::not_implemented_error(
+                "TX Fast Lock preparation is not supported on this device.");
+        }
+
+        _tx_fastlock_prepare_property->set(initial_slot);
+    }
+
+    void tx_fastlock_recall(size_t slot) override
+    {
+        if (!_tx_fastlock_recall_property) {
+            throw uhd::not_implemented_error(
+                "TX Fast Lock profile recall is not supported on this device.");
+        }
+
+        _tx_fastlock_recall_property->set(slot);
+    }
+
     double get_tx_freq(size_t chan) override
     {
         return derive_freq_from_xx_subdev_and_dsp(TX_SIGN,
@@ -2481,6 +2521,8 @@ public:
 private:
     device::sptr _dev;
     property_tree::sptr _tree;
+    property<size_t>* _tx_fastlock_prepare_property = nullptr;
+    property<size_t>* _tx_fastlock_recall_property  = nullptr;
 
     //! Container for spp values set in set_rx_spp()
     std::unordered_map<size_t, size_t> _rx_spp;

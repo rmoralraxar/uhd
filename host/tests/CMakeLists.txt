@@ -665,6 +665,14 @@ UHD_ADD_NONAPI_TEST(
 )
 
 UHD_ADD_NONAPI_TEST(
+    TARGET "ad9361_fastlock_test.cpp"
+    EXTRA_SOURCES
+    ${UHD_SOURCE_DIR}/lib/usrp/common/ad9361_driver/ad9361_device.cpp
+    INCLUDE_DIRS
+    ${UHD_SOURCE_DIR}/lib/usrp/common/ad9361_driver
+)
+
+UHD_ADD_NONAPI_TEST(
     TARGET "discoverable_feature_test.cpp"
     EXTRA_SOURCES
     ${UHD_SOURCE_DIR}/lib/features/discoverable_feature_registry.cpp
