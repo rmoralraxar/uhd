@@ -2578,6 +2578,24 @@ void ad9361_device_t::tx_fastlock_recall(std::size_t slot)
     _req_tx_freq                 = target.frequency_hz;
 }
 
+/* Leave TX Fast Lock mode while preserving the stored profiles. */
+void ad9361_device_t::tx_fastlock_exit()
+{
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
+
+    if (!_tx_fastlock_prepared) {
+        return;
+    }
+
+    _io_iface->poke8(REG_TX_FAST_LOCK_SETUP, 0);
+    _io_iface->poke8(REG_TX_PFD_CONFIG, _tx_fastlock_previous_tx_pfd_config);
+    _io_iface->poke8(REG_ENSM_CONFIG_2, _tx_fastlock_previous_ensm_config_2);
+    _io_iface->poke8(REG_TX_FAST_LOCK_PROGRAM_CTRL, FASTLOCK_PROGRAM_DISABLE);
+
+    _tx_fastlock_active_profile = TX_FASTLOCK_NO_ACTIVE_PROFILE;
+    _tx_fastlock_prepared       = false;
+}
+
 /* Get the current RX or TX frequency. */
 double ad9361_device_t::get_freq(direction_t direction)
 {

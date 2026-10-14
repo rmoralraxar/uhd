@@ -1521,6 +1521,16 @@ public:
      */
     virtual void tx_fastlock_recall(size_t slot) = 0;
 
+    /*! Leave TX Fast Lock mode while preserving the stored profiles.
+     *
+     * Call this operation once after the last profile recall. The device
+     * remains tuned to the frequency of the last recalled profile.
+     *
+     * \throws uhd::not_implemented_error if the device does not support this operation
+     * \throws uhd::runtime_error if communication with the device fails
+     */
+    virtual void tx_fastlock_exit() = 0;
+
     /*!
      * Get the TX center frequency.
      * \param chan the channel index 0 to N-1

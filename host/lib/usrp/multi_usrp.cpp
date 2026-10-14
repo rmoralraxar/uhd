@@ -281,11 +281,14 @@ public:
 
         const fs_path fastlock_path = mb_root(0) / "fastlock" / "tx";
         if (_tree->exists(fastlock_path / "prepare")
-            && _tree->exists(fastlock_path / "recall")) {
+            && _tree->exists(fastlock_path / "recall")
+            && _tree->exists(fastlock_path / "exit")) {
             _tx_fastlock_prepare_property =
                 &_tree->access<size_t>(fastlock_path / "prepare");
             _tx_fastlock_recall_property =
                 &_tree->access<size_t>(fastlock_path / "recall");
+            _tx_fastlock_exit_property =
+                &_tree->access<bool>(fastlock_path / "exit");
         }
     }
 
@@ -2029,6 +2032,16 @@ public:
         _tx_fastlock_recall_property->set(slot);
     }
 
+    void tx_fastlock_exit() override
+    {
+        if (!_tx_fastlock_exit_property) {
+            throw uhd::not_implemented_error(
+                "TX Fast Lock exit is not supported on this device.");
+        }
+
+        _tx_fastlock_exit_property->set(true);
+    }
+
     double get_tx_freq(size_t chan) override
     {
         return derive_freq_from_xx_subdev_and_dsp(TX_SIGN,
@@ -2523,6 +2536,7 @@ private:
     property_tree::sptr _tree;
     property<size_t>* _tx_fastlock_prepare_property = nullptr;
     property<size_t>* _tx_fastlock_recall_property  = nullptr;
+    property<bool>* _tx_fastlock_exit_property      = nullptr;
 
     //! Container for spp values set in set_rx_spp()
     std::unordered_map<size_t, size_t> _rx_spp;

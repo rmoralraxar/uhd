@@ -196,6 +196,12 @@ public:
         _device.tx_fastlock_recall(slot);
     }
 
+    void tx_fastlock_exit() override
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _device.tx_fastlock_exit();
+    }
+
     //! get the current frequency for the given frontend
     double get_freq(const std::string& which) override
     {

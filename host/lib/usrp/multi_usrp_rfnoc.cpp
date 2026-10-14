@@ -2106,6 +2106,12 @@ public:
             "TX Fast Lock profile recall is not supported on RFNoC devices.");
     }
 
+    void tx_fastlock_exit() override
+    {
+        throw uhd::not_implemented_error(
+            "TX Fast Lock exit is not supported on RFNoC devices.");
+    }
+
     double get_tx_freq(size_t chan = 0) override
     {
         auto& tx_chain = _get_tx_chan(chan);

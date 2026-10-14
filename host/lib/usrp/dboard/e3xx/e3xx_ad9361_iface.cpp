@@ -79,6 +79,12 @@ public:
             "ad9361_ctrl::tx_fastlock_recall is not supported over an RPC connection");
     }
 
+    void tx_fastlock_exit() override
+    {
+        throw uhd::runtime_error(
+            "ad9361_ctrl::tx_fastlock_exit is not supported over an RPC connection");
+    }
+
     void set_dc_offset_auto(const std::string& which, const bool on) override
     {
         rpc().set_dc_offset_auto(which, on);

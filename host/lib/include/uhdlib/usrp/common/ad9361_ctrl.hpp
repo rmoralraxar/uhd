@@ -121,6 +121,9 @@ public:
     //! Activate a prepared TX Fast Lock profile.
     virtual void tx_fastlock_recall(std::size_t slot) = 0;
 
+    //! Leave TX Fast Lock mode while preserving the stored profiles.
+    virtual void tx_fastlock_exit() = 0;
+
     //! set the DC offset for I and Q manually
     void set_dc_offset(const std::string&, const std::complex<double>)
     {

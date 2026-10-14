@@ -471,4 +471,59 @@ BOOST_FIXTURE_TEST_CASE(recall_selection_failure_keeps_active_profile, fastlock_
         0x2CU);
 }
 
+BOOST_FIXTURE_TEST_CASE(exit_without_prepare_does_not_access_hardware, fastlock_fixture)
+{
+    device.tx_fastlock_exit();
+
+    BOOST_CHECK(io->writes.empty());
+    BOOST_CHECK(!ad9361_fastlock_test_access::prepared(device));
+    BOOST_CHECK_EQUAL(ad9361_fastlock_test_access::active_profile(device),
+        TX_FASTLOCK_NO_ACTIVE_PROFILE);
+}
+
+BOOST_FIXTURE_TEST_CASE(exit_restores_configuration_and_preserves_profiles, fastlock_fixture)
+{
+    constexpr std::size_t slot = 2;
+    constexpr double frequency = 2.43e9;
+    ad9361_fastlock_test_access::set_profile(device, slot, frequency, 0x2A, 0x2A);
+    io->registers[REG_TX_FORCE_ALC]  = 0x01;
+    io->registers[REG_ENSM_CONFIG_2] = 0xA0;
+    io->registers[REG_TX_PFD_CONFIG] = 0x40;
+
+    device.tx_fastlock_prepare(slot);
+    io->clear_writes();
+
+    device.tx_fastlock_exit();
+
+    BOOST_REQUIRE_EQUAL(io->writes.size(), 4);
+    check_write(io->writes[0], REG_TX_FAST_LOCK_SETUP, 0x00);
+    check_write(io->writes[1], REG_TX_PFD_CONFIG, 0x40);
+    check_write(io->writes[2], REG_ENSM_CONFIG_2, 0xA0);
+    check_write(io->writes[3], REG_TX_FAST_LOCK_PROGRAM_CTRL, 0x00);
+    BOOST_CHECK(!ad9361_fastlock_test_access::prepared(device));
+    BOOST_CHECK_EQUAL(ad9361_fastlock_test_access::active_profile(device),
+        TX_FASTLOCK_NO_ACTIVE_PROFILE);
+    BOOST_CHECK(ad9361_fastlock_test_access::profile_valid(device, slot));
+    BOOST_CHECK_EQUAL(ad9361_fastlock_test_access::tx_frequency(device), frequency);
+    BOOST_CHECK_EQUAL(
+        ad9361_fastlock_test_access::requested_tx_frequency(device), frequency);
+}
+
+BOOST_FIXTURE_TEST_CASE(exit_allows_preparing_stored_profiles_again, fastlock_fixture)
+{
+    constexpr std::size_t slot = 1;
+    ad9361_fastlock_test_access::set_profile(device, slot, 2.42e9, 0x2A, 0x2A);
+    io->registers[REG_TX_FORCE_ALC] = 0x01;
+
+    device.tx_fastlock_prepare(slot);
+    device.tx_fastlock_exit();
+    io->clear_writes();
+
+    device.tx_fastlock_prepare(slot);
+
+    BOOST_CHECK(ad9361_fastlock_test_access::prepared(device));
+    BOOST_CHECK_EQUAL(ad9361_fastlock_test_access::active_profile(device), slot);
+    BOOST_CHECK(!io->writes.empty());
+}
+
 }} // namespace uhd::usrp

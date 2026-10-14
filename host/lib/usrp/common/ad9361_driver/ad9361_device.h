@@ -187,6 +187,9 @@ public:
     /* Activate a prepared TX Fast Lock profile. */
     void tx_fastlock_recall(std::size_t slot);
 
+    /* Leave TX Fast Lock mode while preserving the stored profiles. */
+    void tx_fastlock_exit();
+
     /* Get the current RX or TX frequency. */
     double get_freq(direction_t direction);
 

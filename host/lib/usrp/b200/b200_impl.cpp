@@ -654,6 +654,10 @@ b200_impl::b200_impl(
             .add_coerced_subscriber([this](const std::size_t slot) {
                 _codec_ctrl->tx_fastlock_recall(slot);
             });
+
+        _tree->create<bool>(fastlock_path / "exit")
+            .add_coerced_subscriber(
+                [this](const bool) { _codec_ctrl->tx_fastlock_exit(); });
     }
 
     ////////////////////////////////////////////////////////////////////
